@@ -213,7 +213,7 @@
       </div>
       <p class="meta">
         Built by <a href="https://linkedin.com/in/syen9904">Sean Yen</a> &middot;
-        <a href="https://github.com/syen9904/mops">Source Code</a> &middot;
+        <a href="https://github.com/syen9904/mops">Source Code</a> (this fork adds Tier labels) &middot;
         Last updated: <span id="last-updated">-</span>
       </p>
     </header>
@@ -226,6 +226,9 @@
       <button class="filter-btn active" data-filter="all">All</button>
       <button class="filter-btn" data-filter="recent">Recently Updated</button>
       <button class="filter-btn" data-filter="upcoming">Upcoming Calls</button>
+      <button class="filter-btn" data-filter="t1">Tier 1</button>
+      <button class="filter-btn" data-filter="t2">Tier 2</button>
+      <button class="filter-btn" data-filter="t3">Tier 3</button>
     </div>
 
     <div class="stats">
@@ -238,6 +241,7 @@
       <table>
         <thead>
           <tr>
+            <th data-col="5">Tier <span class="arrow">&#9650;</span></th>
             <th data-col="0">Ticker <span class="arrow">&#9650;</span></th>
             <th data-col="1">Company <span class="arrow">&#9650;</span></th>
             <th data-col="2">Chinese <span class="arrow">&#9650;</span></th>
@@ -246,7 +250,7 @@
           </tr>
         </thead>
         <tbody id="tbody">
-          <tr><td colspan="5" class="loading">Loading data...</td></tr>
+          <tr><td colspan="6" class="loading">Loading data...</td></tr>
         </tbody>
       </table>
     </div>
@@ -275,12 +279,14 @@
 
   async function loadData() {
     try {
-      const [stateRes, namesRes] = await Promise.all([
+      const [stateRes, namesRes, tiersRes] = await Promise.all([
         fetch('./state.json'),
         fetch('./names.json'),
+        fetch('./tiers.json'),
       ]);
       const state = await stateRes.json();
       const names = namesRes.ok ? await namesRes.json() : {};
+      const tiers = tiersRes.ok ? await tiersRes.json() : {};
 
       // 找出最新一次更新的時間
       let latestUpdated = '';
@@ -299,7 +305,7 @@
         // 判斷法說會是否在今天或之後
         const dateMatch = dateClean.match(/^(\d{4})\/(\d{2})\/(\d{2})/);
         const upcoming = dateMatch ? new Date(dateMatch[1], dateMatch[2] - 1, dateMatch[3]) >= new Date(new Date().toDateString()) : false;
-        return { id, name: enName, zhName, date: dateClean, updated, recent: updated === latestUpdated, upcoming };
+        return { id, tier: tiers[id] ? 'T' + tiers[id] : '-', name: enName, zhName, date: dateClean, updated, recent: updated === latestUpdated, upcoming };
       });
 
       const recentCount = allRows.filter(r => r.recent).length;
@@ -311,7 +317,7 @@
       sortAndRender();
     } catch (e) {
       document.getElementById('tbody').innerHTML =
-        '<tr><td colspan="5" class="loading">Failed to load data. Make sure state.json exists.</td></tr>';
+        '<tr><td colspan="6" class="loading">Failed to load data. Make sure state.json exists.</td></tr>';
     }
   }
 
@@ -327,7 +333,7 @@
         return (a.date || '').localeCompare(b.date || ''); // date asc
       });
     } else {
-      const key = ['id', 'name', 'zhName', 'date', 'updated'][sortCol];
+      const key = ['id', 'name', 'zhName', 'date', 'updated', 'tier'][sortCol];
       allRows.sort((a, b) => {
         const av = a[key] || '';
         const bv = b[key] || '';
@@ -342,20 +348,21 @@
     let filtered = rows;
     if (activeFilter === 'recent') filtered = filtered.filter(r => r.recent);
     if (activeFilter === 'upcoming') filtered = filtered.filter(r => r.upcoming);
+    if (/^t[123]$/.test(activeFilter)) filtered = filtered.filter(r => r.tier === activeFilter.toUpperCase());
     if (q) filtered = filtered.filter(r => r.id.includes(q) || r.name.toLowerCase().includes(q) || r.zhName.includes(q));
 
     document.getElementById('visible-count').textContent = filtered.length;
     const tbody = document.getElementById('tbody');
 
     if (filtered.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="no-data">No matching companies found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="no-data">No matching companies found.</td></tr>';
       return;
     }
 
     tbody.innerHTML = filtered.map(r => {
       const cls = r.recent ? ' class="recent"' : '';
       const badge = r.recent ? '<span class="badge">NEW</span>' : '';
-      return `<tr${cls}><td>${r.id}</td><td>${r.name}${badge}</td><td>${r.zhName}</td><td>${r.date}</td><td>${r.updated}</td></tr>`;
+      return `<tr${cls}><td>${r.tier}</td><td>${r.id}</td><td>${r.name}${badge}</td><td>${r.zhName}</td><td>${r.date}</td><td>${r.updated}</td></tr>`;
     }).join('');
   }
 

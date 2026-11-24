@@ -9,6 +9,7 @@ COMPANIES_FILE = "companies.txt"
 STATE_FILE = "state.json"
 README_FILE = "README.md"
 NAMES_FILE = "names.json"
+TIERS_FILE = "tiers.json"
 
 
 def load_companies() -> list[str]:
@@ -28,6 +29,18 @@ def load_names() -> dict:
     return {}
 
 
+def load_tiers() -> dict:
+    """讀取 tiers.json（{代號: 1|2|3}，由潛在買家開發技能同步；沒有則不顯示 Tier）"""
+    if Path(TIERS_FILE).exists():
+        return json.loads(Path(TIERS_FILE).read_text(encoding="utf-8"))
+    return {}
+
+
+def tier_label(tiers: dict, co_id: str) -> str:
+    t = tiers.get(co_id)
+    return f"T{t}" if t else "-"
+
+
 def load_state() -> dict:
     """讀取上次的日期記錄"""
     if Path(STATE_FILE).exists():
@@ -42,7 +55,7 @@ def save_state(state: dict):
     )
 
 
-def generate_readme(companies: list[str], state: dict, updates: list[str], names: dict):
+def generate_readme(companies: list[str], state: dict, updates: list[str], names: dict, tiers: dict):
     """生成易讀的 README.md"""
     taipei_tz = timezone(timedelta(hours=8))
     now = datetime.now(taipei_tz).strftime("%Y/%m/%d %H:%M")
@@ -66,7 +79,7 @@ def generate_readme(companies: list[str], state: dict, updates: list[str], names
     lines = [
         "# 法說會追蹤",
         "",
-        "built by [小嚴](https://linkedin.com/in/syen9904)",
+        "built by [小嚴](https://linkedin.com/in/syen9904)（fork：加上 Tier 標籤）",
         "",
         f"最後執行：{now} (UTC+8)",
         "",
@@ -84,8 +97,8 @@ def generate_readme(companies: list[str], state: dict, updates: list[str], names
     lines.append("- 每日盤前盤後自動更新（確切時間以伺服器排程為主）")
     lines.append("- 排序：更新時間（新→舊），再依法說會開始日期（舊→新）")
     lines.append("")
-    lines.append("| 代號 | 公司 | 法說會日期 | 更新時間 |")
-    lines.append("|------|------|-----------|---------|")
+    lines.append("| Tier | 代號 | 公司 | 法說會日期 | 更新時間 |")
+    lines.append("|------|------|------|-----------|---------|")
 
     for co_id in sorted_companies:
         name = names.get(co_id, co_id)
@@ -96,12 +109,12 @@ def generate_readme(companies: list[str], state: dict, updates: list[str], names
         else:
             content = data if data else "-"
             updated = "-"
-        lines.append(f"| {co_id} | {name} | {content} | {updated} |")
+        lines.append(f"| {tier_label(tiers, co_id)} | {co_id} | {name} | {content} | {updated} |")
 
     lines.append("")
     lines.append("---")
     lines.append("")
-    lines.append("要新增公司？編輯 `companies.txt`，一行一個代號")
+    lines.append("`companies.txt` 與 `tiers.json` 由「潛在買家開發」技能自動同步，請勿手動編輯（會被覆寫）")
 
     Path(README_FILE).write_text("\n".join(lines), encoding="utf-8")
 
@@ -156,8 +169,9 @@ async def fetch_content(client: httpx.AsyncClient, co_id: str) -> tuple[str | No
 
 
 async def main():
-    companies = load_companies()
+    companies = list(dict.fromkeys(load_companies()))
     state = load_state()
+    tiers = load_tiers()
     print(f"追蹤 {len(companies)} 間公司")
 
     all_names = load_names()
@@ -178,7 +192,7 @@ async def main():
             names[co_id] = name or co_id
 
             if new_content and new_content != old_content:
-                updates.append(f"**{co_id} {name or ''}**")
+                updates.append(f"**{co_id} {name or ''}**（{tier_label(tiers, co_id)}）")
                 state[co_id] = {"content": new_content, "updated": now_str}
                 print(f"  {co_id} {name}: UPDATED")
             else:
@@ -186,8 +200,10 @@ async def main():
 
             await asyncio.sleep(0.1)
 
+    # 名單由外部同步，退出名單的公司一併從 state 移除（網頁以 state 為準）
+    state = {k: v for k, v in state.items() if k in set(companies)}
     save_state(state)
-    generate_readme(companies, state, updates, names)
+    generate_readme(companies, state, updates, names, tiers)
 
     if updates:
         print(f"\n更新 {len(updates)} 筆")
